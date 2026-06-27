@@ -1,0 +1,39 @@
+# Virtual environments
+DocuTrust/backend/.venv/
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Pytest cache
+.pytest_cache/
+
+# Uploads (user-generated files)
+DocuTrust/backend/upload/
+
+# Vector DB / embeddings / local RAG storage
+DocuTrust/backend/vectorstore/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
