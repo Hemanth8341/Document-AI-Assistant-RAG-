@@ -8,7 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
 from graph import run_rag_workflow
-from rag import rebuild_vectorstore_from_uploads, save_uploaded_pdf
+from rag import (
+    clear_all_uploads,
+    delete_uploaded_pdf,
+    get_system_stats,
+    rebuild_vectorstore_from_uploads,
+    save_uploaded_pdf,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "upload"
@@ -44,6 +50,7 @@ class AskRequest(BaseModel):
 class SourceItem(BaseModel):
     page: int
     file_name: str | None = None
+    snippet: str | None = None
 
 
 class AskResponse(BaseModel):
@@ -72,11 +79,17 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/stats")
+def system_stats() -> dict[str, object]:
+    return get_system_stats(UPLOAD_DIR, VECTORSTORE_DIR)
+
+
 @app.get("/")
 def root() -> dict[str, str]:
     return {
         "message": "DocuTrust API is running",
         "health": "/health",
+        "stats": "/stats",
         "docs": "/docs",
         "upload": "/upload",
         "ask": "/ask",
@@ -108,6 +121,26 @@ async def upload_pdfs(files: List[UploadFile] = File(...)) -> UploadResponse:
     )
 
 
+@app.delete("/upload/{filename}")
+def delete_file(filename: str) -> dict[str, object]:
+    page_count, chunk_count, logs = delete_uploaded_pdf(filename, UPLOAD_DIR, VECTORSTORE_DIR)
+    return {
+        "message": f"File {filename} deleted successfully.",
+        "page_count": page_count,
+        "chunk_count": chunk_count,
+        "logs": logs,
+    }
+
+
+@app.post("/clear")
+def clear_index() -> dict[str, object]:
+    logs = clear_all_uploads(UPLOAD_DIR, VECTORSTORE_DIR)
+    return {
+        "message": "All documents and vector store index cleared.",
+        "logs": logs,
+    }
+
+
 @app.post("/ask", response_model=AskResponse)
 def ask_question(request: AskRequest) -> AskResponse:
     if not request.question.strip():
@@ -116,7 +149,11 @@ def ask_question(request: AskRequest) -> AskResponse:
     result = run_rag_workflow(request.question, UPLOAD_DIR, VECTORSTORE_DIR)
 
     sources = [
-        SourceItem(page=item["page"], file_name=item.get("file_name"))
+        SourceItem(
+            page=item["page"],
+            file_name=item.get("file_name"),
+            snippet=item.get("snippet"),
+        )
         for item in result["sources"]
     ]
 
@@ -126,3 +163,4 @@ def ask_question(request: AskRequest) -> AskResponse:
         confidence=result["confidence"],
         logs=result["logs"],
     )
+

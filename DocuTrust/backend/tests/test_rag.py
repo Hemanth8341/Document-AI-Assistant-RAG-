@@ -51,10 +51,14 @@ def test_extract_sources_deduplicates_pages() -> None:
     ]
 
     sources = extract_sources(documents)
-    assert sources == [
-        {"page": 1, "file_name": "a.pdf"},
-        {"page": 2, "file_name": "a.pdf"},
-    ]
+    assert len(sources) == 2
+    assert sources[0]["page"] == 1
+    assert sources[0]["file_name"] == "a.pdf"
+    assert sources[0]["snippet"] == "one"
+    assert sources[1]["page"] == 2
+    assert sources[1]["file_name"] == "a.pdf"
+    assert sources[1]["snippet"] == "three"
+
 
 
 def test_adjust_confidence_for_answer_caps_not_found_responses() -> None:

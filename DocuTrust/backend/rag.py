@@ -176,12 +176,84 @@ def extract_sources(documents: list[Document]) -> list[dict[str, object]]:
     for document in documents:
         page = document.metadata.get("page")
         file_name = document.metadata.get("file_name")
+        snippet = document.page_content.strip()[:180] + ("..." if len(document.page_content.strip()) > 180 else "")
         key = (page, file_name)
         if page is None or key in seen_pairs:
             continue
         seen_pairs.add(key)
-        sources.append({"page": int(page), "file_name": file_name})
+        sources.append({
+            "page": int(page),
+            "file_name": file_name,
+            "snippet": snippet,
+        })
     return sources
+
+
+def delete_uploaded_pdf(
+    file_name: str,
+    upload_dir: Path,
+    vectorstore_dir: Path,
+) -> tuple[int, int, list[str]]:
+    target_path = upload_dir / file_name
+    if not target_path.exists() or not target_path.is_file():
+        raise HTTPException(status_code=404, detail=f"File {file_name} not found in uploads.")
+
+    target_path.unlink()
+    logs = [f"Deleted file {file_name}."]
+
+    remaining_pdfs = list(upload_dir.glob("*.pdf"))
+    if not remaining_pdfs:
+        # Clear vectorstore if no PDFs remain
+        import shutil
+        if vectorstore_dir.exists():
+            shutil.rmtree(vectorstore_dir)
+            vectorstore_dir.mkdir(parents=True, exist_ok=True)
+        logs.append("No PDFs remaining. Cleared vector store index.")
+        return 0, 0, logs
+
+    page_count, chunk_count, rebuild_logs = rebuild_vectorstore_from_uploads(upload_dir, vectorstore_dir)
+    logs.extend(rebuild_logs)
+    return page_count, chunk_count, logs
+
+
+def clear_all_uploads(upload_dir: Path, vectorstore_dir: Path) -> list[str]:
+    import shutil
+    logs = ["Clearing all uploaded files and vector store..."]
+
+    if upload_dir.exists():
+        for item in upload_dir.glob("*.pdf"):
+            item.unlink()
+
+    if vectorstore_dir.exists():
+        shutil.rmtree(vectorstore_dir)
+        vectorstore_dir.mkdir(parents=True, exist_ok=True)
+
+    logs.append("All files and vector store index cleared successfully.")
+    return logs
+
+
+def get_system_stats(upload_dir: Path, vectorstore_dir: Path) -> dict[str, object]:
+    ensure_directory(upload_dir)
+    ensure_directory(vectorstore_dir)
+
+    pdf_files = [f.name for f in upload_dir.glob("*.pdf")]
+    has_index = (vectorstore_dir / "index.faiss").exists()
+
+    ollama_online = False
+    try:
+        import requests
+        host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        resp = requests.get(f"{host.rstrip('/')}/api/tags", timeout=2)
+        ollama_online = resp.status_code == 200
+    except Exception:
+        ollama_online = False
+
+    return {
+        "file_count": len(pdf_files),
+        "files": pdf_files,
+        "has_index": has_index,
+        "ollama_online": ollama_online,
+    }
 
 
 def build_retrieval_confidence(scored_documents: list[tuple[Document, float]]) -> float:
@@ -270,3 +342,4 @@ Question:
 Answer:""".strip()
     answer = ask_ollama(prompt, temperature=0.15)
     return answer or NOT_FOUND_ANSWER
+
